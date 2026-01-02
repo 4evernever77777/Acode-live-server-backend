@@ -86,6 +86,21 @@ This workflow structure is inspired by the [RustDesk flutter-build.yml](https://
 - Docker-first approach for deployment
 - Python-specific linting and testing tools
 
+### Matrix Strategy Notes
+The test matrix is optimized to balance coverage and CI time:
+- Full testing on Ubuntu (fastest runner) for all Python versions
+- Limited testing on Windows/macOS to reduce CI minutes
+- Python 3.11 and 3.12 tested across all platforms (latest versions)
+- Python 3.9 and 3.10 tested only on Ubuntu (older versions)
+
+If your project requires comprehensive cross-platform testing for older Python versions, you can remove the exclusions in `python-build.yml`.
+
+### Changelog Format
+The release workflow reads from `changelogs.md` if it exists. For better release notes:
+- Use a structured changelog format (e.g., Keep a Changelog)
+- Or use GitHub's auto-generated release notes
+- Or implement version-specific changelog extraction
+
 ---
 
 ## Environment Variables
