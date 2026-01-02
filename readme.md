@@ -109,6 +109,13 @@ If you don’t want to run the commands manually every time, check out this tool
 
 ---
 
+## Alternative Tools
+
+If you're interested in running Linux distributions on Android, you might also want to check out:
+- **[Andronix](https://play.google.com/store/apps/details?id=studio.com.techriz.andronix)** - Install various Linux distributions on Android without root access using proot containers.
+
+---
+
 ## Contribution
 
 Contributions are welcome! Everything is open source:  
