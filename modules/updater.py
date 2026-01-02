@@ -36,8 +36,20 @@ class updaterMethods():
         print("[01] UPDATE NOW")
         print("[02] SKIP FOR NOW")
         print("[03] SEE CHANGELOGS")
-        choice = input("ENETR YOUR CHOICE : => ")
-        return choice
+        try:
+            choice = input("ENTER YOUR CHOICE : => ")
+            # If input is empty or whitespace, default to skip
+            if not choice or not choice.strip():
+                print("No choice provided, skipping update for now.")
+                return "2"
+            return choice.strip()
+        except (EOFError, KeyboardInterrupt):
+            # Handle cases where input is not available (e.g., running in background, piped input)
+            print("\nNo input available, skipping update for now.")
+            return "2"  # Default to skip
+        except Exception as e:
+            print(f"\nError getting input: {e}. Skipping update.")
+            return "2"  # Default to skip
   
   
     @staticmethod
