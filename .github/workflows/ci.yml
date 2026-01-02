@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black
+          pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Check formatting with black
+        run: black --check --diff .
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate Python modules
+        run: |
+          python -m py_compile main.py
+          python -m py_compile appHandler.py
+          find modules -name "*.py" -exec python -m py_compile {} \;
+
+      - name: Test imports
+        run: |
+          python -c "from main import app; print('✓ Flask app imported')"
+          python -c "from appHandler import appHandler; print('✓ appHandler imported')"
+          python -c "from modules.port import get_available_port; print('✓ port module imported')"
+          python -c "from modules.logo import showLogo; print('✓ logo module imported')"
+
+      - name: Test dependencies
+        run: |
+          python -c "import flask; print('✓ Flask:', flask.__version__)"
+          python -c "import flask_cors; print('✓ Flask-CORS available')"
+          python -c "import jinja2; print('✓ Jinja2:', jinja2.__version__)"
+          python -c "import requests; print('✓ Requests:', requests.__version__)"

@@ -1,0 +1,340 @@
+name: Build and Test Acode Live Server Backend
+
+on:
+  workflow_call:
+    inputs:
+      upload-artifact:
+        type: boolean
+        default: true
+      upload-tag:
+        type: string
+        default: "nightly"
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION_MATRIX: "3.9,3.10,3.11,3.12"
+  TAG_NAME: "${{ inputs.upload-tag }}"
+  VERSION: "1.0.0"
+  UPLOAD_ARTIFACT: "${{ inputs.upload-artifact }}"
+
+jobs:
+  lint-and-format:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black pylint
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: true
+
+      - name: Check code formatting with black
+        run: |
+          black --check --diff .
+        continue-on-error: true
+
+  test:
+    name: Test on ${{ matrix.os }} - Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        exclude:
+          # Exclude some combinations to reduce CI time
+          - os: windows-latest
+            python-version: '3.9'
+          - os: macos-latest
+            python-version: '3.9'
+          - os: windows-latest
+            python-version: '3.10'
+          - os: macos-latest
+            python-version: '3.10'
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+          pip install -r requirements.txt
+
+      - name: Test dependency installation
+        run: |
+          python -c "import flask; print('Flask version:', flask.__version__)"
+          python -c "import flask_cors; print('Flask-CORS imported successfully')"
+          python -c "import jinja2; print('Jinja2 version:', jinja2.__version__)"
+          python -c "import requests; print('Requests version:', requests.__version__)"
+
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile main.py
+          python -m py_compile appHandler.py
+          find modules -name "*.py" -exec python -m py_compile {} \;
+
+      - name: Run smoke test
+        run: |
+          python -c "from main import app; print('Flask app imported successfully')"
+          python -c "from appHandler import appHandler; print('appHandler imported successfully')"
+
+  build-linux:
+    name: Build for Linux
+    needs: [lint-and-format, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --name acode-live-server main.py
+
+      - name: Create distribution package
+        run: |
+          mkdir -p dist/acode-live-server-linux
+          cp dist/acode-live-server dist/acode-live-server-linux/
+          cp config.json dist/acode-live-server-linux/
+          cp eruda.min.js dist/acode-live-server-linux/
+          cp zoom-handler.js dist/acode-live-server-linux/
+          cp readme.md dist/acode-live-server-linux/
+          cp requirements.txt dist/acode-live-server-linux/
+          cp -r modules dist/acode-live-server-linux/
+          cd dist && tar -czf acode-live-server-linux-x64.tar.gz acode-live-server-linux
+
+      - name: Upload Linux artifact
+        if: ${{ inputs.upload-artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: acode-live-server-linux-x64
+          path: dist/acode-live-server-linux-x64.tar.gz
+
+  build-windows:
+    name: Build for Windows
+    needs: [lint-and-format, test]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --name acode-live-server.exe main.py
+
+      - name: Create distribution package
+        run: |
+          mkdir dist\acode-live-server-windows
+          copy dist\acode-live-server.exe dist\acode-live-server-windows\
+          copy config.json dist\acode-live-server-windows\
+          copy eruda.min.js dist\acode-live-server-windows\
+          copy zoom-handler.js dist\acode-live-server-windows\
+          copy readme.md dist\acode-live-server-windows\
+          copy requirements.txt dist\acode-live-server-windows\
+          xcopy /E /I modules dist\acode-live-server-windows\modules
+        shell: cmd
+
+      - name: Create ZIP archive
+        run: |
+          Compress-Archive -Path dist\acode-live-server-windows\* -DestinationPath dist\acode-live-server-windows-x64.zip
+        shell: powershell
+
+      - name: Upload Windows artifact
+        if: ${{ inputs.upload-artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: acode-live-server-windows-x64
+          path: dist/acode-live-server-windows-x64.zip
+
+  build-macos:
+    name: Build for macOS
+    needs: [lint-and-format, test]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --name acode-live-server main.py
+
+      - name: Create distribution package
+        run: |
+          mkdir -p dist/acode-live-server-macos
+          cp dist/acode-live-server dist/acode-live-server-macos/
+          cp config.json dist/acode-live-server-macos/
+          cp eruda.min.js dist/acode-live-server-macos/
+          cp zoom-handler.js dist/acode-live-server-macos/
+          cp readme.md dist/acode-live-server-macos/
+          cp requirements.txt dist/acode-live-server-macos/
+          cp -r modules dist/acode-live-server-macos/
+          cd dist && tar -czf acode-live-server-macos-x64.tar.gz acode-live-server-macos
+
+      - name: Upload macOS artifact
+        if: ${{ inputs.upload-artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: acode-live-server-macos-x64
+          path: dist/acode-live-server-macos-x64.tar.gz
+
+  docker-build:
+    name: Build Docker Image
+    needs: [lint-and-format, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile << 'EOF'
+          FROM python:3.11-slim
+
+          WORKDIR /app
+
+          COPY requirements.txt .
+          RUN pip install --no-cache-dir -r requirements.txt
+
+          COPY . .
+
+          EXPOSE 1024-1034
+
+          CMD ["python", "main.py"]
+          EOF
+
+      - name: Build Docker image
+        run: |
+          docker build -t acode-live-server:latest .
+          docker tag acode-live-server:latest acode-live-server:${{ env.VERSION }}
+
+      - name: Test Docker image
+        run: |
+          docker run -d --name test-container -p 1024:1024 acode-live-server:latest
+          sleep 5
+          docker logs test-container
+          docker stop test-container
+          docker rm test-container
+
+      - name: Save Docker image
+        if: ${{ inputs.upload-artifact }}
+        run: |
+          docker save acode-live-server:latest | gzip > acode-live-server-docker.tar.gz
+
+      - name: Upload Docker artifact
+        if: ${{ inputs.upload-artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: acode-live-server-docker
+          path: acode-live-server-docker.tar.gz
+
+  create-release:
+    name: Create Release
+    needs: [build-linux, build-windows, build-macos, docker-build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.upload-artifact
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Release Notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          # Acode Live Server Backend ${{ env.VERSION }}
+
+          ## What's Changed
+          - Multi-platform builds (Linux, Windows, macOS)
+          - Docker image support
+          - Improved CI/CD pipeline
+
+          ## Downloads
+          - **Linux**: acode-live-server-linux-x64.tar.gz
+          - **Windows**: acode-live-server-windows-x64.zip
+          - **macOS**: acode-live-server-macos-x64.tar.gz
+          - **Docker**: acode-live-server-docker.tar.gz
+
+          ## Installation
+          Refer to the README.md for installation instructions.
+          EOF
+
+      - name: Upload Release Notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
